@@ -231,7 +231,9 @@ export const setLabel = (ids: string[], label: ColorLabel) => patchPhotos(ids, (
 export const setMeta = (id: string, meta: PhotoMeta) => patchPhotos([id], () => ({ meta }));
 export const setKeywords = (ids: string[], keywords: string[]) => patchPhotos(ids, () => ({ keywords }));
 
-export const settingsHash = (s: DevelopSettings | undefined) => (s ? hashString(JSON.stringify(s)) : '');
+/** Bump when the RAW/develop pipeline's output changes, so cached edited thumbnails and previews regenerate. */
+const RENDER_VERSION = 2;
+export const settingsHash = (s: DevelopSettings | undefined) => (s ? hashString(`${RENDER_VERSION}|${JSON.stringify(s)}`) : '');
 
 /** Stores develop settings for a photo (thumbVariant is updated separately once a thumbnail is rendered). */
 export function setSettings(id: string, settings: DevelopSettings | undefined) {
