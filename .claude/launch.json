@@ -1,0 +1,24 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "vite",
+        "--port",
+        "5173"
+      ],
+      "port": 5173
+    },
+    {
+      "name": "web-stable",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "LP_NO_HMR=1 npx vite --port 5174 --strictPort"
+      ],
+      "port": 5174
+    }
+  ]
+}

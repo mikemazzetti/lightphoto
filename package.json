@@ -1,0 +1,64 @@
+{
+  "name": "lightphoto",
+  "productName": "LightPhoto Studio",
+  "version": "0.1.0",
+  "description": "Cross-platform photo library, raw developer, layered image editor and video editor",
+  "main": "dist-electron/main.js",
+  "private": true,
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "tsc --noEmit && vite build && node scripts/build-electron.mjs",
+    "typecheck": "tsc --noEmit",
+    "start": "electron .",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist": "npm run build && electron-builder --mac --win"
+  },
+  "build": {
+    "appId": "com.lightphoto.studio",
+    "productName": "LightPhoto Studio",
+    "files": [
+      "dist/**",
+      "dist-electron/**",
+      "package.json",
+      "!dist/**/*.map"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.photography"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "ag-psd": "^31.0.2",
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "exifr": "^7.1.3",
+    "libraw-wasm": "^1.6.0",
+    "mediabunny": "^1.61.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "typescript": "^5.9.3",
+    "utif2": "^4.1.0",
+    "vite": "^8.3.2",
+    "zustand": "^5.0.15"
+  }
+}

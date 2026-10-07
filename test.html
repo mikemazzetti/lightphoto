@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+  <head><meta charset="utf-8" /><title>LightPhoto engine tests</title></head>
+  <body style="background:#111;color:#ddd;font:12px monospace">
+    <pre id="out">running…</pre>
+    <script type="module">
+      // Dev-only harness: http://localhost:5173/test.html?t=raw
+      const out = document.getElementById('out');
+      const t = new URLSearchParams(location.search).get('t') || 'raw';
+      const results = {};
+      try {
+        if (t === 'raw') {
+          const dec = await import('/src/core/image/decode.ts');
+          const t0 = performance.now();
+          const d = await dec.decodeRaw('/test-media/synthetic.dng');
+          const px = d.source.data;
+          const at = (x, y) => { const i = (y * d.width + x) * d.source.channels; return [px[i], px[i + 1], px[i + 2]]; };
+          Object.assign(results, { ms: Math.round(performance.now() - t0), w: d.width, h: d.height, bits: d.bitDepth, ch: d.source.channels, type: px.constructor.name,
+            redPatch: at(100, 200), bluePatch: at(800, 200), white: at(900, 480), grayDark: at(300, 760), grayLight: at(1100, 760) });
+          const { createGL } = await import('/src/core/gl/gl.ts');
+          const { DevelopEngine } = await import('/src/core/develop/engine.ts');
+          const { defaultRawSettings } = await import('/src/core/develop/settings.ts');
+          const c = document.createElement('canvas'); c.width = 600; c.height = 400; document.body.append(c);
+          const e = new DevelopEngine(createGL(c));
+          e.setSource(d.source);
+          const s = defaultRawSettings();
+          const rt = e.render(s, 600, 400);
+          e.present(rt, { x: 0, y: 0, scale: 1 });
+          const p = rt.read(0, 0, 600, 400);
+          const q = (x, y) => Array.from(p.slice((y * 600 + x) * 4, (y * 600 + x) * 4 + 3));
+          results.rendered = { red: q(50, 100), blue: q(400, 100), grayLight: q(550, 380) };
+          results.glError = e.gl.getError();
+        }
+      } catch (err) {
+        results.error = String(err && err.stack || err);
+      }
+      out.textContent = 'RESULT ' + JSON.stringify(results, null, 1);
+    </script>
+  </body>
+</html>
