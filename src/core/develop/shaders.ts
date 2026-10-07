@@ -20,6 +20,8 @@ void main() {
  * Geometry pass: samples the (mipmapped, linear) source through the crop/rotate/flip matrix,
  * applies lens corrections, writes linear RGB + log2 luminance in alpha.
  */
+export const LENS_LUT_N = 256;
+
 export const BASE_FS = /* glsl */ `#version 300 es
 precision highp float;
 in vec2 vUv; out vec4 o;
@@ -29,7 +31,25 @@ uniform vec2 uSrcSize;
 uniform float uDistortion;
 uniform float uLensVig;
 uniform float uSrcIsSrgbData; // 1 when the source texture holds sRGB-encoded data in a non-sRGB format
+// Built-in lens profile LUT over r = 0..1 (half-diagonal): (green factor - 1, red/green - 1, blue/green - 1, gain - 1).
+uniform sampler2D uLensLut;
+uniform float uLensOn;
 ${GLSL_COLOR}
+
+// Minification-aware sampling with explicit gradients. When shrinking by more than 1.5×, four taps
+// at the footprint's quadrant centres, each one mip level finer, form a box filter of the right
+// size — noticeably sharper than plain trilinear. Near or above 1:1 it is a single tap (exact at
+// 1:1). Explicit gradients keep it valid in any control flow.
+vec3 sampleSrc(vec2 uv, vec2 dx, vec2 dy) {
+  vec2 ts = vec2(textureSize(uSrc, 0));
+  float fp = max(length(dx * ts), length(dy * ts));
+  if (fp < 1.5) return textureGrad(uSrc, uv, dx, dy).rgb;
+  vec2 hx = dx * 0.5, hy = dy * 0.5;
+  vec2 a = 0.25 * (dx + dy), b = 0.25 * (dx - dy);
+  return 0.25 * (textureGrad(uSrc, uv + a, hx, hy).rgb + textureGrad(uSrc, uv - a, hx, hy).rgb +
+                 textureGrad(uSrc, uv + b, hx, hy).rgb + textureGrad(uSrc, uv - b, hx, hy).rgb);
+}
+
 void main() {
   vec2 suv = (uGeom * vec3(vUv, 1.0)).xy;
   float mx = max(uSrcSize.x, uSrcSize.y);
@@ -42,10 +62,27 @@ void main() {
     float f = (1.0 + k * r2) / (k > 0.0 ? (1.0 + k * rc2) : 1.0);
     suv = 0.5 + (suv - 0.5) * f;
   }
-  // Sample unconditionally: mip selection needs derivatives from uniform control flow.
-  vec3 c = texture(uSrc, suv).rgb;
+  vec2 dx = dFdx(suv), dy = dFdy(suv);
+  vec3 c;
+  float gain = 1.0;
+  if (uLensOn > 0.5) {
+    // Radial model: the output pixel at radius r samples the source at r * factor(r), per channel.
+    float r = length((suv - 0.5) * uSrcSize) / (0.5 * length(uSrcSize));
+    float n = ${LENS_LUT_N}.0;
+    vec4 l = texture(uLensLut, vec2(clamp(r, 0.0, 1.0) * (n - 1.0) / n + 0.5 / n, 0.5));
+    float fg = 1.0 + l.r;
+    vec2 v = suv - 0.5;
+    c = vec3(sampleSrc(0.5 + v * fg * (1.0 + l.g), dx * fg, dy * fg).r,
+             sampleSrc(0.5 + v * fg, dx * fg, dy * fg).g,
+             sampleSrc(0.5 + v * fg * (1.0 + l.b), dx * fg, dy * fg).b);
+    gain = 1.0 + l.a;
+    suv = 0.5 + v * fg;
+  } else {
+    c = sampleSrc(suv, dx, dy);
+  }
   if (suv.x < 0.0 || suv.y < 0.0 || suv.x > 1.0 || suv.y > 1.0) c = vec3(0.0);
   if (uSrcIsSrgbData > 0.5) c = srgbToLinear(c);
+  c *= gain;
   if (uLensVig != 0.0) c *= 1.0 + uLensVig * (r2 / rc2);
   c = max(c, 0.0);
   o = vec4(c, log2(max(luma(c), 1.0e-5)));

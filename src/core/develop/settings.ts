@@ -127,7 +127,8 @@ export interface DevelopSettings {
   sharpening: { amount: number; radius: number; detail: number; masking: number }; // 0..150, 0.5..3, 0..100, 0..100
   noise: { luminance: number; color: number }; // 0..100
   // Optics
-  lens: { distortion: number; vignette: number }; // -100..100 each
+  /** Manual distortion / vignetting (-100..100) + whether the camera's built-in lens profile is applied. */
+  lens: { distortion: number; vignette: number; profile: boolean };
   // Effects
   vignette: { amount: number; midpoint: number; roundness: number; feather: number; highlights: number };
   grain: { amount: number; size: number; roughness: number };
@@ -177,7 +178,7 @@ export function defaultSettings(): DevelopSettings {
     },
     sharpening: { amount: 0, radius: 1, detail: 25, masking: 0 },
     noise: { luminance: 0, color: 0 },
-    lens: { distortion: 0, vignette: 0 },
+    lens: { distortion: 0, vignette: 0, profile: true },
     vignette: { amount: 0, midpoint: 50, roundness: 0, feather: 50, highlights: 0 },
     grain: { amount: 0, size: 25, roughness: 50 },
     orientation: 0,
@@ -277,6 +278,7 @@ export function normalizeSettings(s: Partial<DevelopSettings> | null | undefined
   if (typeof out.flipV !== 'boolean') out.flipV = !!out.flipV;
   for (const k of ['sharpening', 'noise', 'lens', 'vignette', 'grain', 'crop'] as const) out[k] = fixNumbers(out[k], d[k]);
   if (!(out.crop.w > 0 && out.crop.h > 0)) out.crop = d.crop;
+  if (typeof out.lens.profile !== 'boolean') out.lens = { ...out.lens, profile: d.lens.profile };
   for (const ch of ['rgb', 'r', 'g', 'b'] as const) if (!validCurve(out.curve[ch])) out.curve[ch] = d.curve[ch];
   for (const k of ['hue', 'sat', 'lum'] as const) out.hsl[k] = fixArray(out.hsl[k], d.hsl[k]);
   out.bwMix = fixArray(out.bwMix, d.bwMix);

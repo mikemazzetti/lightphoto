@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import { CurvePoint, GradeWheel, HSL_BAND_COLORS, HSL_BAND_HUES, HSL_BAND_NAMES } from '@/core/develop/settings';
-import { Button, cx, Select, Slider } from '@/ui/controls';
+import { Button, Checkbox, cx, Select, Slider } from '@/ui/controls';
 import { CurveEditor } from '@/ui/CurveEditor';
 import { Icon } from '@/ui/Icon';
 import { endAngle, flip, rotateOrientation, setAngle } from '../cropTool';
@@ -314,9 +314,26 @@ export function DetailPanel() {
 export function LensPanel() {
   return (
     <DPanel id="lens" title="Lens Corrections" toggle onReset={() => resetKeys(['lens'], 'Lens Corrections')}>
+      <LensProfileRow />
       <SSlider path="lens.distortion" label="Distortion" min={-100} max={100} history="Lens Distortion" />
       <SSlider path="lens.vignette" label="Vignetting" min={-100} max={100} history="Lens Vignetting" />
     </DPanel>
+  );
+}
+
+/** Built-in (camera-embedded) lens profile toggle — Lightroom's "Enable Profile Corrections". */
+function LensProfileRow() {
+  const profile = useDevelop((s) => s.lensProfile);
+  const on = useDevelop((s) => s.settings?.lens.profile !== false);
+  return (
+    <div className="col" style={{ gap: 2, margin: '2px 0 6px' }}>
+      <Checkbox checked={on} onChange={(v) => editCommit((s) => ({ ...s, lens: { ...s.lens, profile: v } }), v ? 'Enable Lens Profile' : 'Disable Lens Profile')}>
+        Use built-in lens profile
+      </Checkbox>
+      <span className="faint" style={{ fontSize: 11, paddingLeft: 20 }}>
+        {profile ? `${profile} — distortion, vignetting & CA` : 'None embedded in this image'}
+      </span>
+    </div>
   );
 }
 

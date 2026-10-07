@@ -85,6 +85,8 @@ export interface DevelopState {
   presetFilter: string;
 
   status: LoadStatus;
+  /** Label of the built-in lens profile embedded in the current RAW (null when none / not loaded). */
+  lensProfile: string | null;
   histogram: Histogram | null;
   historyTick: number;
   snapshots: Record<string, Snapshot[]>;
@@ -129,6 +131,7 @@ export const useDevelop = create<DevelopState>(() => ({
   presetFilter: '',
 
   status: { loading: false, label: '', error: null, full: false },
+  lensProfile: null,
   histogram: null,
   historyTick: 0,
   snapshots: {},

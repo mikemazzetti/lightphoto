@@ -151,7 +151,13 @@ export function loadPreview(photo: Photo, px: number): Promise<ImageBitmap> {
       run: async () => {
         if (!photo.settings) {
           if (photo.kind !== 'raw') return decodeBitmap(photo.path, full ? undefined : px);
-          if (!full) return decodeBitmap(photo.path, px);
+          if (!full) {
+            // The camera's embedded preview is often far smaller than the screen (e.g. 1616 px);
+            // when it is, develop a sharper one from the RAW itself.
+            const prev = await decodeBitmap(photo.path, px);
+            if (Math.max(prev.width, prev.height) >= px * 0.85) return prev;
+            prev.close();
+          }
         }
         const s = photo.settings ? normalizeSettings(photo.settings) : defaultRawSettings();
         return renderPreview(photo, s, px);

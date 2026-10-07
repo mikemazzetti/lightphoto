@@ -5,6 +5,7 @@ import exifr from 'exifr';
 import { api, extname, kindOf } from '@/platform/api';
 import type { PixelBuffer } from '../develop/engine';
 import { limit } from '../util/async';
+import { readLensProfile } from './lensProfile';
 
 export interface DecodedImage {
   width: number;
@@ -87,6 +88,8 @@ export interface RawDecodeOptions {
 export async function decodeRaw(path: string, opts: RawDecodeOptions = {}): Promise<DecodedImage> {
   return rawQueue(async () => {
     const buf = await api.readFile(path);
+    // Read before LibRaw takes ownership of (transfers) the buffer.
+    const lens = readLensProfile(buf);
     const raw = new LibRaw();
     try {
       await raw.open(new Uint8Array(buf), {
@@ -102,7 +105,7 @@ export async function decodeRaw(path: string, opts: RawDecodeOptions = {}): Prom
       if (!img) throw new Error('RAW decode returned no image');
       let data: Uint16Array | Uint8Array = img.data as Uint16Array | Uint8Array;
       if (img.bits === 16 && data instanceof Uint8Array) data = new Uint16Array(data.buffer, data.byteOffset, data.byteLength / 2);
-      const source: PixelBuffer = { width: img.width, height: img.height, data, channels: img.colors === 4 ? 4 : 3 };
+      const source: PixelBuffer = { width: img.width, height: img.height, data, channels: img.colors === 4 ? 4 : 3, lens };
       return { width: img.width, height: img.height, source, isRaw: true, bitDepth: img.bits === 16 ? 16 : 8 };
     } finally {
       raw.dispose();
@@ -110,9 +113,41 @@ export async function decodeRaw(path: string, opts: RawDecodeOptions = {}): Prom
   });
 }
 
-/** Applies LibRaw's `flip` (dcraw convention: 3 = 180°, 5 = 90° CCW, 6 = 90° CW) to a preview bitmap. */
+/** EXIF orientation (1–8) stored inside a JPEG, or 0 when it has none. */
+function jpegOrientation(u8: Uint8Array): number {
+  const v = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+  if (v.getUint16(0) !== 0xffd8) return 0;
+  let p = 2;
+  while (p + 4 < u8.length) {
+    const marker = v.getUint16(p);
+    const len = v.getUint16(p + 2);
+    if (marker === 0xffe1 && v.getUint32(p + 4) === 0x45786966) {
+      const t = p + 10; // TIFF header after "Exif\0\0"
+      const le = v.getUint16(t) === 0x4949;
+      const ifd = t + v.getUint32(t + 4, le);
+      const n = v.getUint16(ifd, le);
+      for (let i = 0; i < n; i++) {
+        const e = ifd + 2 + i * 12;
+        if (e + 10 > u8.length) break;
+        if (v.getUint16(e, le) === 0x0112) return v.getUint16(e + 8, le);
+      }
+      return 0;
+    }
+    if ((marker & 0xff00) !== 0xff00 || marker === 0xffda) break;
+    p += 2 + len;
+  }
+  return 0;
+}
+
+/**
+ * Applies LibRaw's `flip` (dcraw convention: 3 = 180°, 5 = 90° CCW, 6 = 90° CW) to a preview
+ * bitmap. Callers skip this when the embedded JPEG carries its own EXIF orientation, which the
+ * browser already applies on decode.
+ */
 function orientRawPreview(bmp: ImageBitmap, flip: number | undefined): ImageBitmap {
   if (flip !== 3 && flip !== 5 && flip !== 6) return bmp;
+  // A quarter-turn flip on an already-portrait bitmap means it was oriented upstream.
+  if (flip !== 3 && bmp.height > bmp.width) return bmp;
   const quarter = flip !== 3;
   const c = new OffscreenCanvas(quarter ? bmp.height : bmp.width, quarter ? bmp.width : bmp.height);
   const ctx = c.getContext('2d')!;
@@ -134,7 +169,10 @@ export async function decodeRawPreview(path: string, maxSize?: number): Promise<
       if (!t) return null;
       // Embedded previews are stored in sensor orientation; the full decode applies flip itself.
       const flip = (await raw.metadata().catch(() => undefined))?.flip;
-      if (t.format === 'jpeg') return orientRawPreview(await bitmapFromBlob(new Blob([t.data as BlobPart], { type: 'image/jpeg' }), maxSize), flip);
+      if (t.format === 'jpeg') {
+        const bmp = await bitmapFromBlob(new Blob([t.data as BlobPart], { type: 'image/jpeg' }), maxSize);
+        return jpegOrientation(t.data) > 1 ? bmp : orientRawPreview(bmp, flip);
+      }
       if (t.format === 'bitmap') {
         const rgba = new Uint8Array(t.width * t.height * 4);
         for (let i = 0, j = 0; j < rgba.length; i += 3, j += 4) {

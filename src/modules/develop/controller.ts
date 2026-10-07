@@ -302,6 +302,7 @@ export class ViewerController {
       return false;
     }
     if (oldW) this.sourceRatio = oldW / Math.max(1, this.engine.sourceWidth);
+    useDevelop.setState({ lensProfile: this.engine.lensProfile?.label ?? null });
     this.stage = stage;
     this.renderCache = null;
     this.needImage = true;

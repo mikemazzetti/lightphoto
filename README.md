@@ -31,7 +31,7 @@ certificate in the `build` section of `package.json` (see electron-builder docs)
 | Workspace | Like | Highlights |
 | --- | --- | --- |
 | **Library** | Lightroom Library | Import files/folders, virtualized grid for very large catalogs, ratings, flags, colour labels, collections, filters, EXIF, batch export |
-| **Develop** | Lightroom Develop / Camera Raw | Non-destructive GPU pipeline: white balance, tone, presence, tone curve, colour mixer, colour grading, detail, lens, effects, crop/straighten, linear/radial/brush masks, presets, history |
+| **Develop** | Lightroom Develop / Camera Raw | Non-destructive GPU pipeline: white balance, tone, presence, tone curve, colour mixer, colour grading, detail, lens, effects, crop/straighten, linear/radial/brush masks, presets, history, camera-embedded lens corrections |
 | **Edit** | Photoshop | Layers with 27 blend modes, masks, adjustment layers, painting & retouching tools, selections, filters, PSD open/save |
 | **Video** | Premiere Pro | Media bin, multi-track timeline, trimming/razor/ripple, transitions, titles, Lumetri-style colour, keyframes, hardware-accelerated MP4/WebM export |
 
@@ -40,7 +40,9 @@ Press **⌘/** (Ctrl+/) in the app for the keyboard shortcut list.
 ## Supported formats
 
 - Photos: JPEG, PNG, WebP, AVIF, GIF, BMP, TIFF, PSD (composite and layers), HEIC (macOS),
-  and camera RAW via LibRaw (CR2, CR3, NEF, ARW, DNG, RAF, ORF, RW2, PEF, …).
+  and camera RAW via LibRaw (CR2, CR3, NEF, ARW, DNG, RAF, ORF, RW2, PEF, …). Sony ARW files that
+  embed lens-correction data (e.g. the RX100 series) get distortion, vignetting and CA corrected
+  automatically, matching the camera's JPEGs.
 - Video/audio: whatever Chromium decodes (H.264, HEVC where the OS supports it, VP8/9, AV1, AAC,
   MP3, Opus, FLAC, WAV).
 

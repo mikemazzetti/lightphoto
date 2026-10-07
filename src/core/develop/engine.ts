@@ -1,7 +1,8 @@
 import { caps, GL, RenderTarget, Shader, Texture, TexFormat } from '../gl/gl';
 import { bakeToneCurve, LUT_SIZE, toHalf } from './curve';
 import { orientedSize, outputSize, outputToSource, toGL } from './geometry';
-import { BASE_FS, BLUR_FS, DECODE16_FS, DOWN_FS, MAIN_FS, MAX_LOCALS, NR_FS, PRESENT_FS } from './shaders';
+import { BASE_FS, BLUR_FS, DECODE16_FS, DOWN_FS, LENS_LUT_N, MAIN_FS, MAX_LOCALS, NR_FS, PRESENT_FS } from './shaders';
+import { bakeLensLut, LensProfile } from '../image/lensProfile';
 import { curveIsIdentity, DevelopSettings, GradeWheel, LocalAdjustment, Profile } from './settings';
 import { rasterizeStrokes, StrokeRasterCache } from './brush';
 
@@ -16,6 +17,8 @@ export interface PixelBuffer {
   channels: 3 | 4;
   /** true when samples are linear light; false (default) for sRGB gamma-encoded. */
   linear?: boolean;
+  /** Camera-embedded lens corrections read from the RAW file (applied when settings.lens.profile). */
+  lens?: LensProfile | null;
 }
 
 export type EngineSource = TexImageSource | PixelBuffer;
@@ -86,6 +89,8 @@ interface Pyramid {
  */
 export class DevelopEngine {
   private srcTex: Texture | null = null;
+  private lens: LensProfile | null = null;
+  private lensTex: Texture | null = null;
   private srcOwned = true;
   private srcIsSrgbData = false;
   private srcVersion = 0;
@@ -191,7 +196,22 @@ export class DevelopEngine {
     }
     this.srcOwned = true;
     this.srcIsSrgbData = false;
+    this.setLens(isPixelBuffer(src) ? src.lens ?? null : null);
     this.srcVersion++;
+  }
+
+  /** The built-in lens profile of the current source (RAW files that embed one), if any. */
+  get lensProfile(): LensProfile | null {
+    return this.lens;
+  }
+
+  private setLens(p: LensProfile | null) {
+    if (p === this.lens) return;
+    this.lens = p;
+    if (!p) return;
+    const data = toHalf(bakeLensLut(p, LENS_LUT_N));
+    if (!this.lensTex) this.lensTex = Texture.create(this.gl, LENS_LUT_N, 1, { format: 'rgba16f', data });
+    else this.lensTex.allocate(LENS_LUT_N, 1, data);
   }
 
   /**
@@ -209,6 +229,7 @@ export class DevelopEngine {
     this.srcW = this.srcTex.width;
     this.srcH = this.srcTex.height;
     this.srcIsSrgbData = false;
+    this.setLens(null);
     this.srcVersion++;
   }
 
@@ -223,6 +244,7 @@ export class DevelopEngine {
     this.srcIsSrgbData = srgbData && tex.format !== 'srgb8';
     this.srcW = tex.width;
     this.srcH = tex.height;
+    this.setLens(null);
     this.srcVersion++;
   }
 
@@ -271,7 +293,8 @@ export class DevelopEngine {
   }
 
   private ensureGeometry(s: DevelopSettings, w: number, h: number) {
-    const key = JSON.stringify([this.srcVersion, w, h, s.orientation, s.flipH, s.flipV, s.angle, s.crop, s.lens.distortion, s.lens.vignette]);
+    const lensOn = !!this.lens && s.lens.profile !== false;
+    const key = JSON.stringify([this.srcVersion, w, h, s.orientation, s.flipH, s.flipV, s.angle, s.crop, s.lens.distortion, s.lens.vignette, lensOn]);
     if (key === this.geomKey && this.base) return;
     this.geomKey = key;
     this.nrKey = '';
@@ -285,6 +308,8 @@ export class DevelopEngine {
       uDistortion: (s.lens.distortion / 100) * 0.22,
       uLensVig: s.lens.vignette / 100,
       uSrcIsSrgbData: this.srcIsSrgbData ? 1 : 0,
+      uLensOn: lensOn ? 1 : 0,
+      uLensLut: this.lensTex ?? this.curveTex,
     });
     // Pyramid: base, /2, /4 … down to ~32px.
     const levels = this.pyr?.levels ?? [];
@@ -703,6 +728,7 @@ export class DevelopEngine {
     this.trim();
     this.releaseSource();
     this.curveTex.dispose();
+    this.lensTex?.dispose();
     if (this.maskTex) this.gl.deleteTexture(this.maskTex);
     for (const s of [this.sBase, this.sDown, this.sBlur, this.sNR, this.sMain, this.sPresent, this.sDecode16]) s?.dispose();
   }
