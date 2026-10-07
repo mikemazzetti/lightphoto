@@ -37,6 +37,8 @@ export interface BrushStroke {
   feather: number; // 0..100
   flow: number; // 0..100
   erase: boolean;
+  /** Lasso: `points` is a closed outline that is filled (feather softens its edge); `size` is unused. */
+  fill?: boolean;
 }
 
 export type LocalType = 'linear' | 'radial' | 'brush';

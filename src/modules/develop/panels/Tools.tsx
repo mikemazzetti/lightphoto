@@ -9,7 +9,7 @@ import { promptDialog } from '@/ui/overlays';
 import { setTool } from '../actions';
 import { getController } from '../controller';
 import { applyCrop, cancelCrop, flip, resetCrop, rotateOrientation, setAspect, swapAspect } from '../cropTool';
-import { deleteMask, duplicateMask, moveMask, patchMask, startCreate, updateLocal } from '../maskTool';
+import { deleteMask, duplicateMask, moveMask, patchMask, startCreate, startLasso, updateLocal } from '../maskTool';
 import { commit, editCommit, editLive, useDevelop } from '../store';
 import { AngleSlider } from './More';
 import { fmtValue, SubHead } from '../ui';
@@ -193,28 +193,37 @@ function BrushOptions({ id }: { id: string }) {
   const b = useDevelop((s) => s.brush);
   const strokes = useDevelop((s) => s.settings?.locals.find((l) => l.id === id)?.strokes?.length ?? 0);
   const setB = (patch: Partial<typeof b>) => useDevelop.setState((s) => ({ brush: { ...s.brush, ...patch } }));
+  const lassoMode = b.mode === 'lasso';
   return (
     <>
+      <div className="row" style={{ gap: 2, marginTop: 4 }}>
+        <button type="button" className={cx('dv-chip', !lassoMode && 'active')} onClick={() => setB({ mode: 'paint' })} title="Paint the mask with a soft brush (K)">
+          Paint
+        </button>
+        <button type="button" className={cx('dv-chip', lassoMode && 'active')} onClick={() => setB({ mode: 'lasso' })} title="Draw around an area to fill it (L)">
+          Lasso
+        </button>
+      </div>
       <SubHead
         right={
           <div className="row" style={{ gap: 2 }}>
-            <button type="button" className={cx('dv-chip', !b.erase && 'active')} onClick={() => setB({ erase: false })} title="Paint (add to mask)">
+            <button type="button" className={cx('dv-chip', !b.erase && 'active')} onClick={() => setB({ erase: false })} title="Add to the mask">
               Add
             </button>
-            <button type="button" className={cx('dv-chip', b.erase && 'active')} onClick={() => setB({ erase: true })} title="Erase (or hold Alt while painting)">
+            <button type="button" className={cx('dv-chip', b.erase && 'active')} onClick={() => setB({ erase: true })} title="Subtract from the mask (or hold Alt)">
               Erase
             </button>
           </div>
         }
       >
-        Brush
+        {lassoMode ? 'Lasso' : 'Brush'}
       </SubHead>
-      <Slider label="Size" value={+(b.size * 100).toFixed(2)} min={0.2} max={40} step={0.1} curve="pow2" defaultValue={6} suffix="%" onChange={(v) => setB({ size: v / 100 })} />
+      {!lassoMode && <Slider label="Size" value={+(b.size * 100).toFixed(2)} min={0.2} max={40} step={0.1} curve="pow2" defaultValue={6} suffix="%" onChange={(v) => setB({ size: v / 100 })} />}
       <Slider label="Feather" value={b.feather} min={0} max={100} defaultValue={60} onChange={(v) => setB({ feather: v })} />
       <Slider label="Flow" value={b.flow} min={1} max={100} defaultValue={100} onChange={(v) => setB({ flow: v })} />
       <div className="row" style={{ justifyContent: 'space-between' }}>
         <span className="faint">
-          {strokes} stroke{strokes === 1 ? '' : 's'} · [ ] size · Alt erases
+          {lassoMode ? 'Draw around an area — it closes when you return to the start · Alt subtracts' : `${strokes} stroke${strokes === 1 ? '' : 's'} · [ ] size · Alt erases`}
         </span>
         <Button small variant="ghost" disabled={!strokes} onClick={() => editCommit((s) => updateLocal(s, id, (l) => ({ ...l, strokes: [] })), 'Clear Brush Strokes')}>
           Clear
@@ -292,8 +301,11 @@ export function MaskPanel() {
         <Button small icon="ellipse" active={creating === 'radial'} disabled={full} onClick={() => startCreate('radial')} title="Radial Gradient (⇧R) — drag from the centre">
           Radial
         </Button>
-        <Button small icon="brush" disabled={full} onClick={() => startCreate('brush')} title="Brush (K)">
+        <Button small icon="brush" disabled={full} onClick={() => { useDevelop.setState((s) => ({ brush: { ...s.brush, mode: 'paint' } })); startCreate('brush'); }} title="Brush (K)">
           Brush
+        </Button>
+        <Button small icon="lasso" disabled={full} onClick={startLasso} title="Lasso (L) — draw around an object to mask it">
+          Lasso
         </Button>
       </div>
       {creating && <div className="dv-hint accent">Drag on the photo to place the {creating === 'linear' ? 'linear' : 'radial'} gradient — or click for a default size. Esc cancels.</div>}

@@ -33,6 +33,8 @@ export interface BrushOptions {
   feather: number;
   flow: number;
   erase: boolean;
+  /** 'lasso': drag an outline around an area to fill it into the mask instead of painting dabs. */
+  mode: 'paint' | 'lasso';
 }
 
 export interface LoadStatus {
@@ -116,7 +118,7 @@ export const useDevelop = create<DevelopState>(() => ({
   selectedMask: null,
   hoverMask: null,
   creating: null,
-  brush: { size: 0.06, feather: 60, flow: 100, erase: false },
+  brush: { size: 0.06, feather: 60, flow: 100, erase: false, mode: 'paint' },
 
   cropAspect: 'Original',
   cropPortrait: false,

@@ -7,7 +7,8 @@ import { CURSORS } from './cursors';
 import { applyCrop } from './cropTool';
 
 /**
- * Masking tool: on-canvas creation and editing of linear / radial gradients and brush masks.
+ * Masking tool: on-canvas creation and editing of linear / radial gradients and brush masks
+ * (painted with dabs, or filled with lasso outlines).
  * Masks are stored in source-normalised coordinates (they follow crop / rotate); all drawing
  * and hit-testing happens in viewport CSS px through the controller's geometry matrices.
  */
@@ -141,7 +142,7 @@ export function hoverCursor(c: ViewerController, p: VPos, st: DevelopState): str
   const s = st.settings!;
   const sel = s.locals.find((l) => l.id === st.selectedMask);
   if (pinHit(c, p, s.locals, sel?.id)) return 'pointer';
-  if (sel?.type === 'brush') return 'none';
+  if (sel?.type === 'brush') return st.brush.mode === 'lasso' ? 'crosshair' : 'none';
   if (sel) {
     const h = hit(c, p, sel);
     if (h) {
@@ -172,7 +173,8 @@ export function pointerDown(c: ViewerController, e: PointerEvent, p: VPos, st: D
     return true;
   }
   if (sel?.type === 'brush') {
-    paint(c, e, p, sel, st);
+    if (st.brush.mode === 'lasso') lasso(c, e, p, sel, st);
+    else paint(c, e, p, sel, st);
     return true;
   }
   if (sel) {
@@ -361,6 +363,88 @@ function paint(c: ViewerController, e: PointerEvent, p: VPos, sel: LocalAdjustme
   );
 }
 
+/** Outline being drawn (viewport CSS px), for the overlay. */
+let lassoDraft: { css: Pt[]; erase: boolean; closing: boolean } | null = null;
+
+const polygonArea = (pts: Pt[]) => {
+  let a = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const [x0, y0] = pts[i];
+    const [x1, y1] = pts[(i + 1) % pts.length];
+    a += x0 * y1 - x1 * y0;
+  }
+  return Math.abs(a) / 2;
+};
+
+/**
+ * Lasso: drag an outline around an area. It closes and fills as soon as the pointer comes back
+ * near its start (or on release). Alt / Erase subtracts the area from the mask instead.
+ */
+function lasso(c: ViewerController, e: PointerEvent, p: VPos, sel: LocalAdjustment, st: DevelopState) {
+  const erase = st.brush.erase || e.altKey;
+  const { feather, flow } = st.brush;
+  const id = sel.id;
+  const src: Pt[] = [cssToSrcN(c, p)];
+  const css: Pt[] = [P(p)];
+  lassoDraft = { css, erase, closing: false };
+  let travelled = 0;
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    lassoDraft = null;
+    if (css.length >= 3 && polygonArea(css) >= 64) {
+      const stroke: BrushStroke = { points: src, size: 0, feather, flow, erase, fill: true };
+      setLive(updateLocal(cur(), id, (l) => ({ ...l, strokes: [...(l.strokes ?? []), stroke] })));
+      commit(erase ? 'Lasso Subtract' : 'Lasso');
+    }
+    c.requestOverlay();
+  };
+  c.drag(
+    e,
+    (ev) => {
+      if (done) return;
+      const evs = typeof ev.getCoalescedEvents === 'function' ? ev.getCoalescedEvents() : [];
+      for (const ce of evs.length ? evs : [ev]) {
+        const q = c.pos(ce);
+        const d = dist(P(q), css[css.length - 1]);
+        if (d < 2) continue;
+        travelled += d;
+        css.push(P(q));
+        src.push(cssToSrcN(c, q));
+      }
+      c.hover = c.pos(ev);
+      // Wrapping back to the start closes the shape immediately.
+      const near = travelled > 80 && css.length > 8 && dist(css[css.length - 1], css[0]) < 14;
+      if (lassoDraft) lassoDraft.closing = near;
+      if (near) finish();
+      else c.requestOverlay();
+    },
+    finish,
+    'lasso',
+  );
+}
+
+/** Lasso button / L key: lasso into the selected brush mask, or start a new one. */
+export function startLasso() {
+  if (useDevelop.getState().tool === 'crop') applyCrop();
+  const st = useDevelop.getState();
+  const s = st.settings;
+  if (!s) return;
+  const sel = s.locals.find((l) => l.id === st.selectedMask);
+  useDevelop.setState((x) => ({ brush: { ...x.brush, mode: 'lasso', erase: false } }));
+  if (sel?.type === 'brush' && st.tool === 'mask') return;
+  if (s.locals.length >= MAX_LOCALS) {
+    toast(`A photo can have up to ${MAX_LOCALS} masks.`, 'warn');
+    return;
+  }
+  const n = s.locals.filter((l) => l.name.startsWith('Lasso')).length + 1;
+  const l: LocalAdjustment = { ...defaultLocal('brush', newId()), name: `Lasso ${n}` };
+  setLive({ ...s, locals: [...s.locals, l] });
+  useDevelop.setState({ tool: 'mask', selectedMask: l.id, creating: null });
+  commit('New Lasso Mask');
+}
+
 // ---------------------------------------------------------------------------------------------
 // Drawing
 
@@ -453,8 +537,23 @@ export function draw(c: ViewerController, ctx: CanvasRenderingContext2D, st: Dev
     ctx.globalAlpha = 1;
   }
 
+  // Lasso outline in progress.
+  if (lassoDraft && lassoDraft.css.length > 1) {
+    const { css, erase, closing } = lassoDraft;
+    ctx.beginPath();
+    css.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    strokeTwice(ctx, 1.5, erase ? '#ff9a9a' : '#fff');
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(css[css.length - 1][0], css[css.length - 1][1]);
+    ctx.lineTo(css[0][0], css[0][1]);
+    strokeTwice(ctx, 1, 'rgba(255,255,255,0.7)');
+    ctx.setLineDash([]);
+    knob(ctx, css[0], closing ? 7 : 5, closing ? '#30a46c' : 'rgba(30,30,32,0.85)');
+  }
+
   // Brush cursor.
-  if (sel?.type === 'brush' && c.hover && !st.creating) {
+  if (sel?.type === 'brush' && st.brush.mode !== 'lasso' && c.hover && !st.creating) {
     const p = c.hover;
     const d = st.brush.size * c.srcW * c.view.scale;
     const inner = d * (1 - st.brush.feather / 100);

@@ -151,7 +151,7 @@ const SHORTCUTS: { section: string; items: [string, string][] }[] = [
       ['r', 'Crop & straighten (x swaps, enter applies)'],
       ['w', 'White balance picker'],
       ['shift+m', 'Masking'],
-      ['m / shift+r / k', 'Linear / radial / brush mask'],
+      ['m / shift+r / k / l', 'Linear / radial / brush / lasso mask'],
       ['o', 'Mask overlay'],
       ['shift+a', 'Auto tone'],
       ['shift+mod+c / shift+mod+v', 'Copy / paste settings'],

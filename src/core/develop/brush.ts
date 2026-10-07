@@ -73,7 +73,36 @@ export function dab(feather: number, erase: boolean): OffscreenCanvas {
   return c;
 }
 
+/** Fills a closed lasso outline; feather 0..100 maps to an edge blur of up to 1% of the width. */
+function drawFill(cache: StrokeRasterCache, s: BrushStroke) {
+  const { ctx, width, height } = cache;
+  if (s.points.length < 3) return;
+  const blur = (s.feather / 100) * 0.01 * width;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  ctx.save();
+  ctx.globalAlpha = Math.max(0.01, Math.min(1, s.flow / 100));
+  ctx.fillStyle = s.erase ? '#000' : '#fff';
+  if (blur > 0.3) ctx.filter = `blur(${blur.toFixed(2)}px)`;
+  ctx.beginPath();
+  for (const [x, y] of s.points) {
+    const px = x * width;
+    const py = y * height;
+    ctx.lineTo(px, py);
+    x0 = Math.min(x0, px); y0 = Math.min(y0, py); x1 = Math.max(x1, px); y1 = Math.max(y1, py);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+  const pad = blur * 3 + 2;
+  cache.mark(x0 - pad, y0 - pad, x1 + pad, y1 + pad);
+}
+
 function drawSegment(cache: StrokeRasterCache, s: BrushStroke, from: number, srcW: number) {
+  if (s.fill) {
+    // Lassos are added complete, so they're drawn once.
+    if (from === 0) drawFill(cache, s);
+    return;
+  }
   const { ctx, width, height } = cache;
   const d = Math.max(1, s.size * width);
   const spacing = Math.max(0.75, d * 0.12);

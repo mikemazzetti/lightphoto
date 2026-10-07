@@ -12,7 +12,7 @@ import { applyPrevious, autoTone, editInEditor, goToLibrary, navigatePhoto, past
 import { getController } from './controller';
 import { applyCrop, cancelCrop, rotateOrientation, swapAspect } from './cropTool';
 import { exportDialog } from './export';
-import { deleteMask, startCreate } from './maskTool';
+import { deleteMask, startCreate, startLasso } from './maskTool';
 import { BasicPanel, HistogramPanel, ToolStrip } from './panels/Basic';
 import { copySettingsDialog, HistoryPanel, NavigatorPanel, PresetsPanel, SnapshotsPanel } from './panels/Left';
 import { ColorGradingPanel, ColorMixerPanel, DetailPanel, EffectsPanel, LensPanel, ToneCurvePanel, TransformPanel } from './panels/More';
@@ -188,9 +188,11 @@ export default function DevelopModule() {
     m: () => startCreate('linear'),
     'shift+r': () => startCreate('radial'),
     k: () => {
+      useDevelop.setState((s) => ({ brush: { ...s.brush, mode: 'paint' } }));
       if (brushSel()) return;
       startCreate('brush');
     },
+    l: () => startLasso(),
     o: () => {
       if (!inMask()) return false;
       useDevelop.setState((s) => ({ maskOverlay: !s.maskOverlay }));
