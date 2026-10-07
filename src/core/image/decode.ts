@@ -6,6 +6,7 @@ import { api, extname, kindOf } from '@/platform/api';
 import type { PixelBuffer } from '../develop/engine';
 import { limit } from '../util/async';
 import { readLensProfile } from './lensProfile';
+import { RAW_TONE_LUT_SIZE, rawToneLut } from '../develop/rawTone';
 
 export interface DecodedImage {
   width: number;
@@ -92,8 +93,12 @@ export async function decodeRaw(path: string, opts: RawDecodeOptions = {}): Prom
     const lens = readLensProfile(buf);
     const raw = new LibRaw();
     try {
+      // Scene-linear 16-bit with a fixed exposure (no per-image auto-brightening, which made night
+      // shots ±1.5 EV off); the camera tone curve is applied on the GPU (see rawTone.ts).
       await raw.open(new Uint8Array(buf), {
         outputBps: 16,
+        noAutoBright: true,
+        gamm: [1, 1],
         useCameraWb: true,
         useCameraMatrix: 1,
         outputColor: 1,
@@ -103,9 +108,10 @@ export async function decodeRaw(path: string, opts: RawDecodeOptions = {}): Prom
       });
       const img = await raw.imageData();
       if (!img) throw new Error('RAW decode returned no image');
+      const iso = (await raw.metadata().catch(() => undefined))?.iso_speed;
       let data: Uint16Array | Uint8Array = img.data as Uint16Array | Uint8Array;
       if (img.bits === 16 && data instanceof Uint8Array) data = new Uint16Array(data.buffer, data.byteOffset, data.byteLength / 2);
-      const source: PixelBuffer = { width: img.width, height: img.height, data, channels: img.colors === 4 ? 4 : 3, lens };
+      const source: PixelBuffer = { width: img.width, height: img.height, data, channels: img.colors === 4 ? 4 : 3, lens, linear: true, tone: 'camera', iso: iso || undefined };
       return { width: img.width, height: img.height, source, isRaw: true, bitDepth: img.bits === 16 ? 16 : 8 };
     } finally {
       raw.dispose();
@@ -227,15 +233,31 @@ export async function decodeBitmap(path: string, maxSize?: number): Promise<Imag
   return (await decodeImage(path, { maxSize })).source as ImageBitmap;
 }
 
+function sampleTo8Bit(pb: PixelBuffer): Uint8Array {
+  const out = new Uint8Array(65536);
+  const lut = pb.linear && pb.tone === 'camera' ? rawToneLut() : null;
+  for (let v = 0; v < 65536; v++) {
+    const x = v / 65535;
+    let d: number;
+    if (lut) d = lut[Math.round(Math.sqrt(x) * (RAW_TONE_LUT_SIZE - 1))];
+    else if (pb.linear) d = x <= 0.0031308 ? x * 12.92 : 1.055 * x ** (1 / 2.4) - 0.055;
+    else d = x;
+    out[v] = Math.round(Math.min(1, Math.max(0, d)) * 255);
+  }
+  return out;
+}
+
 /** Converts a (16-bit) pixel buffer to an 8-bit ImageBitmap. */
 export async function pixelBufferToBitmap(pb: PixelBuffer, maxSize?: number): Promise<ImageBitmap> {
   const n = pb.width * pb.height;
   const rgba = new Uint8ClampedArray(n * 4);
-  const shift = pb.data instanceof Uint16Array ? 8 : 0;
+  const sixteen = pb.data instanceof Uint16Array;
+  // 16-bit sample → 8-bit display value (camera tone curve / sRGB encode for linear data).
+  const map = sixteen ? sampleTo8Bit(pb) : null;
   for (let i = 0, j = 0; j < rgba.length; i += pb.channels, j += 4) {
-    rgba[j] = pb.data[i] >> shift;
-    rgba[j + 1] = pb.data[i + 1] >> shift;
-    rgba[j + 2] = pb.data[i + 2] >> shift;
+    rgba[j] = map ? map[pb.data[i]] : pb.data[i];
+    rgba[j + 1] = map ? map[pb.data[i + 1]] : pb.data[i + 1];
+    rgba[j + 2] = map ? map[pb.data[i + 2]] : pb.data[i + 2];
     rgba[j + 3] = 255;
   }
   const bmp = await createImageBitmap(new ImageData(rgba, pb.width, pb.height));

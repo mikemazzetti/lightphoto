@@ -36,7 +36,7 @@ export function destroyEngine(e: DevelopEngine) {
 /** Settings a photo must be rendered with, or null when its pixels can be used as decoded. */
 export function renderSettingsFor(photo: Photo, includeEdits = true): DevelopSettings | null {
   if (includeEdits && photo.settings) return normalizeSettings(photo.settings);
-  if (photo.kind === 'raw') return defaultRawSettings();
+  if (photo.kind === 'raw') return defaultRawSettings(photo.meta?.iso);
   return null;
 }
 
@@ -159,7 +159,7 @@ export function loadPreview(photo: Photo, px: number): Promise<ImageBitmap> {
             prev.close();
           }
         }
-        const s = photo.settings ? normalizeSettings(photo.settings) : defaultRawSettings();
+        const s = photo.settings ? normalizeSettings(photo.settings) : defaultRawSettings(photo.meta?.iso);
         return renderPreview(photo, s, px);
       },
     });

@@ -89,7 +89,8 @@ function readSony(r: Reader, len: number): LensProfile | null {
     }
     let vignetting: number[] = [];
     const vig = shorts(r, t.get(0x7032));
-    if (vig && vig[0] >= 2 && vig[0] <= 16 && vig.length >= vig[0] + 1) vignetting = vig.slice(1, vig[0] + 1).map((v) => 2 ** (v / 16384));
+    // darktable applies 2^(v / 2^14); half that strength matches macOS's rendering of the same files.
+    if (vig && vig[0] >= 2 && vig[0] <= 16 && vig.length >= vig[0] + 1) vignetting = vig.slice(1, vig[0] + 1).map((v) => 2 ** (v / 32768));
     return { label: 'Built-in (Sony)', distortion, caRed, caBlue, vignetting };
   }
   return null;

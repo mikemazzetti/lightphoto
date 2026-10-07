@@ -3,6 +3,7 @@ import { bakeToneCurve, LUT_SIZE, toHalf } from './curve';
 import { orientedSize, outputSize, outputToSource, toGL } from './geometry';
 import { BASE_FS, BLUR_FS, DECODE16_FS, DOWN_FS, LENS_LUT_N, MAIN_FS, MAX_LOCALS, NR_FS, PRESENT_FS } from './shaders';
 import { bakeLensLut, LensProfile } from '../image/lensProfile';
+import { RAW_TONE_LUT_SIZE, rawToneLut } from './rawTone';
 import { curveIsIdentity, DevelopSettings, GradeWheel, LocalAdjustment, Profile } from './settings';
 import { rasterizeStrokes, StrokeRasterCache } from './brush';
 
@@ -19,6 +20,10 @@ export interface PixelBuffer {
   linear?: boolean;
   /** Camera-embedded lens corrections read from the RAW file (applied when settings.lens.profile). */
   lens?: LensProfile | null;
+  /** 'camera': scene-linear RAW data gets the default camera tone curve at decode (see rawTone.ts). */
+  tone?: 'camera';
+  /** Capture ISO when known (drives default noise reduction). */
+  iso?: number;
 }
 
 export type EngineSource = TexImageSource | PixelBuffer;
@@ -91,6 +96,7 @@ export class DevelopEngine {
   private srcTex: Texture | null = null;
   private lens: LensProfile | null = null;
   private lensTex: Texture | null = null;
+  private toneTex: Texture | null = null;
   private srcOwned = true;
   private srcIsSrgbData = false;
   private srcVersion = 0;
@@ -176,7 +182,9 @@ export class DevelopEngine {
         const raw = Texture.create(gl, width, height, { format: src.channels === 4 ? 'rgba16ui' : 'rgb16ui', filter: 'nearest', data: src.data });
         const lin = new RenderTarget(gl, width, height, this.fmt, 'mipmap');
         if (!this.sDecode16) this.sDecode16 = new Shader(gl, DECODE16_FS);
-        this.sDecode16.draw(lin, { uSrc: raw, uLinearInput: src.linear ? 1 : 0 });
+        const toneOn = !!src.linear && src.tone === 'camera';
+        if (toneOn && !this.toneTex) this.toneTex = Texture.create(gl, RAW_TONE_LUT_SIZE, 1, { format: 'r16f', data: toHalf(rawToneLut()) });
+        this.sDecode16.draw(lin, { uSrc: raw, uLinearInput: src.linear ? 1 : 0, uToneOn: toneOn ? 1 : 0, uTone: this.toneTex ?? this.curveTex });
         lin.texture.generateMipmaps();
         raw.dispose();
         gl.deleteFramebuffer(lin.fbo);
@@ -729,6 +737,7 @@ export class DevelopEngine {
     this.releaseSource();
     this.curveTex.dispose();
     this.lensTex?.dispose();
+    this.toneTex?.dispose();
     if (this.maskTex) this.gl.deleteTexture(this.maskTex);
     for (const s of [this.sBase, this.sDown, this.sBlur, this.sNR, this.sMain, this.sPresent, this.sDecode16]) s?.dispose();
   }

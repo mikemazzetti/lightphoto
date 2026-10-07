@@ -34,7 +34,7 @@ async function renderRaw(pb: PixelBuffer): Promise<ImageBitmap> {
   const eng = new DevelopEngine(gl);
   try {
     eng.setSource(pb);
-    const img = eng.renderImageData(defaultRawSettings());
+    const img = eng.renderImageData(defaultRawSettings(pb.iso));
     return await createImageBitmap(img);
   } finally {
     eng.dispose();

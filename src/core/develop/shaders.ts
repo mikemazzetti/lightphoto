@@ -7,12 +7,20 @@ precision highp usampler2D;
 in vec2 vUv; out vec4 o;
 uniform usampler2D uSrc;
 uniform float uLinearInput;
+// Optional camera tone curve for scene-linear RAW data: display value indexed by sqrt(linear).
+uniform sampler2D uTone;
+uniform float uToneOn;
 ${GLSL_COLOR}
+float tone(float x) {
+  const float N = 1024.0;
+  return texture(uTone, vec2(sqrt(clamp(x, 0.0, 1.0)) * (N - 1.0) / N + 0.5 / N, 0.5)).r;
+}
 void main() {
   ivec2 sz = textureSize(uSrc, 0);
   uvec4 v = texelFetch(uSrc, ivec2(vUv * vec2(sz)), 0);
   vec3 c = vec3(v.rgb) / 65535.0;
   if (uLinearInput < 0.5) c = srgbToLinear(c);
+  else if (uToneOn > 0.5) c = srgbToLinear(vec3(tone(c.r), tone(c.g), tone(c.b)));
   o = vec4(c, 1.0);
 }`;
 
@@ -38,12 +46,30 @@ ${GLSL_COLOR}
 
 // Minification-aware sampling with explicit gradients. When shrinking by more than 1.5×, four taps
 // at the footprint's quadrant centres, each one mip level finer, form a box filter of the right
-// size — noticeably sharper than plain trilinear. Near or above 1:1 it is a single tap (exact at
-// 1:1). Explicit gradients keep it valid in any control flow.
+// size — noticeably sharper than plain trilinear. Near or above 1:1 it is bicubic (exact at 1:1).
+// No implicit derivatives, so it's valid in any control flow.
+// Catmull-Rom bicubic in 9 bilinear taps (exact at texel centres, sharper than bilinear between
+// them — matters because lens correction / straighten shift most pixels by fractional amounts).
+vec3 sampleBicubic(vec2 uv, vec2 ts) {
+  vec2 p = uv * ts;
+  vec2 t1 = floor(p - 0.5) + 0.5;
+  vec2 f = p - t1;
+  vec2 w0 = f * (-0.5 + f * (1.0 - 0.5 * f));
+  vec2 w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
+  vec2 w2 = f * (0.5 + f * (2.0 - 1.5 * f));
+  vec2 w3 = f * f * (-0.5 + 0.5 * f);
+  vec2 w12 = w1 + w2;
+  vec2 a = (t1 - 1.0) / ts, b = (t1 + w2 / w12) / ts, c = (t1 + 2.0) / ts;
+  vec3 r = (textureLod(uSrc, vec2(a.x, a.y), 0.0).rgb * w0.x + textureLod(uSrc, vec2(b.x, a.y), 0.0).rgb * w12.x + textureLod(uSrc, vec2(c.x, a.y), 0.0).rgb * w3.x) * w0.y
+         + (textureLod(uSrc, vec2(a.x, b.y), 0.0).rgb * w0.x + textureLod(uSrc, vec2(b.x, b.y), 0.0).rgb * w12.x + textureLod(uSrc, vec2(c.x, b.y), 0.0).rgb * w3.x) * w12.y
+         + (textureLod(uSrc, vec2(a.x, c.y), 0.0).rgb * w0.x + textureLod(uSrc, vec2(b.x, c.y), 0.0).rgb * w12.x + textureLod(uSrc, vec2(c.x, c.y), 0.0).rgb * w3.x) * w3.y;
+  return max(r, 0.0);
+}
+
 vec3 sampleSrc(vec2 uv, vec2 dx, vec2 dy) {
   vec2 ts = vec2(textureSize(uSrc, 0));
   float fp = max(length(dx * ts), length(dy * ts));
-  if (fp < 1.5) return textureGrad(uSrc, uv, dx, dy).rgb;
+  if (fp < 1.5) return sampleBicubic(uv, ts);
   vec2 hx = dx * 0.5, hy = dy * 0.5;
   vec2 a = 0.25 * (dx + dy), b = 0.25 * (dx - dy);
   return 0.25 * (textureGrad(uSrc, uv + a, hx, hy).rgb + textureGrad(uSrc, uv - a, hx, hy).rgb +
@@ -329,7 +355,8 @@ void main() {
   if (uSharp.x > 0.0) {
     float edge = abs(dT) + 0.25 * abs(dC);
     float mW = uSharp.z <= 0.001 ? 1.0 : smoothstep(uSharp.z * 0.2, uSharp.z * 0.2 + 0.08, edge);
-    float d = dS / (1.0 + abs(dS) * (1.0 - uSharp.y) * 6.0);
+    // Detail: low values soften the very largest swings (halo control) without cancelling edge sharpening.
+    float d = dS / (1.0 + abs(dS) * (1.0 - uSharp.y) * 1.5);
     lY += uSharp.x * 1.4 * d * mW;
   }
 
