@@ -168,8 +168,8 @@ export function setIn<T>(obj: T, path: Path | string[], value: unknown): T {
 // ---------------------------------------------------------------------------------------------
 // Defaults & histories
 
-export const defaultsFor = (photo: Pick<Photo, 'kind' | 'meta'> | undefined): DevelopSettings =>
-  photo?.kind === 'raw' ? defaultRawSettings(photo.meta?.iso) : defaultSettings();
+export const defaultsFor = (photo: Pick<Photo, 'kind'> | undefined): DevelopSettings =>
+  photo?.kind === 'raw' ? defaultRawSettings() : defaultSettings();
 
 const histories = new Map<string, History<DevelopSettings>>();
 

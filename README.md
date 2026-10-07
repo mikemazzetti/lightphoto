@@ -69,7 +69,8 @@ src/modules/         library/ develop/ editor/ video/ workspaces (+ shared/ thum
   resolution when zoomed in or exported. Sources are mip-mapped on upload.
 - **16-bit RAW path.** RAW files decode to 16-bit scene-linear data with a fixed exposure (no
   per-image auto-brightening) and a camera tone curve calibrated against macOS's RAW engine, then
-  are processed in half-float linear light. Capture sharpening and noise reduction default by ISO.
+  are processed in half-float linear light. Defaults stay minimal: light capture sharpening and
+  colour-speckle removal only.
 - **Off-thread decoding.** RAW decoding runs in a WebAssembly worker (multi-threaded via
   SharedArrayBuffer — the app is cross-origin isolated for this); thumbnails are generated with
   bounded concurrency and cached on disk.

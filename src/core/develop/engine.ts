@@ -22,8 +22,6 @@ export interface PixelBuffer {
   lens?: LensProfile | null;
   /** 'camera': scene-linear RAW data gets the default camera tone curve at decode (see rawTone.ts). */
   tone?: 'camera';
-  /** Capture ISO when known (drives default noise reduction). */
-  iso?: number;
 }
 
 export type EngineSource = TexImageSource | PixelBuffer;

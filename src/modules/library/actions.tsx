@@ -324,7 +324,7 @@ export function removeKeyword(word: string, ids = targetIds()) {
 export const ALL_GROUPS = Object.keys(SETTING_GROUPS) as SettingGroup[];
 
 export function baseSettings(p: Photo): DevelopSettings {
-  return p.settings ? normalizeSettings(p.settings) : p.kind === 'raw' ? defaultRawSettings(p.meta?.iso) : defaultSettings();
+  return p.settings ? normalizeSettings(p.settings) : p.kind === 'raw' ? defaultRawSettings() : defaultSettings();
 }
 
 /** Applies `fn` to each photo's settings (creating defaults when missing), in one undo step. */

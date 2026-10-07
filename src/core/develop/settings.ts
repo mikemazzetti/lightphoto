@@ -192,21 +192,14 @@ export function defaultSettings(): DevelopSettings {
 
 /** Defaults Lightroom applies to RAW files (base profile + capture sharpening + colour NR). */
 /**
- * Defaults for RAW files. The camera tone curve is applied at decode (rawTone.ts), so there is no
- * extra profile contrast. Capture sharpening and luminance noise reduction scale with ISO — tuned so
- * an ISO 400 Sony RX100 V file lands on macOS's rendering (noise ≈1.1×, edge contrast ≈1×).
+ * Defaults for RAW files — deliberately minimal: light capture sharpening and colour-speckle removal
+ * only (no luminance noise reduction, which smears texture). The fixed camera tone curve is applied
+ * at decode (rawTone.ts), so there is no extra profile contrast.
  */
-export function defaultRawSettings(iso?: number): DevelopSettings {
+export function defaultRawSettings(): DevelopSettings {
   const s = defaultSettings();
-  const stops = iso && iso > 0 ? Math.log2(iso / 100) : 2; // stops above ISO 100; unknown → ISO 400
-  // Luminance NR at ISO 100, 200, 400 … 6400 (interpolated per stop, clamped at the ends).
-  const NR = [30, 50, 70, 80, 88, 94, 100];
-  const k = Math.min(NR.length - 1, Math.max(0, stops));
-  const i = Math.min(NR.length - 2, Math.floor(k));
-  s.noise.luminance = Math.round(NR[i] + (NR[i + 1] - NR[i]) * (k - i));
+  s.sharpening.amount = 40;
   s.noise.color = 25;
-  s.sharpening.amount = 60;
-  s.sharpening.masking = Math.round(Math.min(40, 15 + 4 * Math.max(0, stops)));
   return s;
 }
 

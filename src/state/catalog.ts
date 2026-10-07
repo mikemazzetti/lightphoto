@@ -136,7 +136,11 @@ export async function loadCatalog() {
   if (useCatalog.getState().loaded) return;
   const data = await api.storeGet<any>(STORE_KEY);
   if (data) {
-    for (const p of Object.values<Photo>(data.photos ?? {})) if (p.settings) p.settings = normalizeSettings(p.settings);
+    for (const p of Object.values<Photo>(data.photos ?? {})) {
+      if (!p.settings) continue;
+      p.settings = normalizeSettings(p.settings);
+      if (p.kind === 'raw') resetHeavyRawDefaults(p.settings, p.meta?.iso);
+    }
     useCatalog.setState({
       photos: data.photos ?? {},
       order: data.order ?? [],
@@ -148,6 +152,23 @@ export async function loadCatalog() {
     });
   }
   useCatalog.setState({ loaded: true });
+}
+
+/**
+ * Render v2 briefly defaulted RAWs to heavy, ISO-scaled luminance NR + sharpening 60. Photos still
+ * carrying exactly those values get the minimal defaults back (user-chosen values are left alone).
+ */
+function resetHeavyRawDefaults(s: DevelopSettings, iso?: number) {
+  const stops = iso && iso > 0 ? Math.log2(iso / 100) : 2;
+  const NR = [30, 50, 70, 80, 88, 94, 100];
+  const k = Math.min(NR.length - 1, Math.max(0, stops));
+  const i = Math.min(NR.length - 2, Math.floor(k));
+  const oldNR = Math.round(NR[i] + (NR[i + 1] - NR[i]) * (k - i));
+  const oldMask = Math.round(Math.min(40, 15 + 4 * Math.max(0, stops)));
+  if (s.noise.luminance === oldNR && s.sharpening.amount === 60 && s.sharpening.masking === oldMask) {
+    s.noise = { ...s.noise, luminance: 0 };
+    s.sharpening = { ...s.sharpening, amount: 40, masking: 0 };
+  }
 }
 
 export const flushCatalog = () => persist.flush();

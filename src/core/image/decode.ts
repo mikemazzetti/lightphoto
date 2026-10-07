@@ -108,10 +108,9 @@ export async function decodeRaw(path: string, opts: RawDecodeOptions = {}): Prom
       });
       const img = await raw.imageData();
       if (!img) throw new Error('RAW decode returned no image');
-      const iso = (await raw.metadata().catch(() => undefined))?.iso_speed;
       let data: Uint16Array | Uint8Array = img.data as Uint16Array | Uint8Array;
       if (img.bits === 16 && data instanceof Uint8Array) data = new Uint16Array(data.buffer, data.byteOffset, data.byteLength / 2);
-      const source: PixelBuffer = { width: img.width, height: img.height, data, channels: img.colors === 4 ? 4 : 3, lens, linear: true, tone: 'camera', iso: iso || undefined };
+      const source: PixelBuffer = { width: img.width, height: img.height, data, channels: img.colors === 4 ? 4 : 3, lens, linear: true, tone: 'camera' };
       return { width: img.width, height: img.height, source, isRaw: true, bitDepth: img.bits === 16 ? 16 : 8 };
     } finally {
       raw.dispose();
